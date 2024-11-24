@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCare Service Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>AutoCare Service Manager</h1>
+        <nav id="auth-nav">
+            <div id="user-info" style="display: none;">
+                Welcome, <span id="user-email"></span>
+                <button id="logout-btn">Logout</button>
+            </div>
+            <div id="auth-buttons">
+                <button id="login-btn">Login</button>
+                <button id="signup-btn">Sign Up</button>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div id="auth-forms" style="display: none;">
+            <section id="login-section" class="auth-section">
+                <h2>Login</h2>
+                <form id="login-form">
+                    <input type="email" name="email" placeholder="Email" required>
+                    <input type="password" name="password" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                </form>
+            </section>
+
+            <section id="signup-section" class="auth-section">
+                <h2>Sign Up</h2>
+                <form id="signup-form">
+                    <input type="email" name="email" placeholder="Email" required>
+                    <input type="password" name="password" placeholder="Password" required>
+                    <input type="password" name="confirm-password" placeholder="Confirm Password" required>
+                    <button type="submit">Sign Up</button>
+                </form>
+            </section>
+        </div>
+
+        <section id="appointment-section">
+            <h2>Book a Service Appointment</h2>
+            <form id="appointment-form">
+                <div class="form-group">
+                    <label for="car-make">Car Make:</label>
+                    <input type="text" id="car-make" name="car-make" required placeholder="e.g., Toyota">
+                </div>
+
+                <div class="form-group">
+                    <label for="car-model">Car Model:</label>
+                    <input type="text" id="car-model" name="car-model" required placeholder="e.g., Camry">
+                </div>
+
+                <div class="form-group">
+                    <label for="car-year">Car Year:</label>
+                    <input type="number" id="car-year" name="car-year" required min="1900" max="2024" placeholder="e.g., 2020">
+                </div>
+
+                <div class="form-group">
+                    <label for="service-type">Service Type:</label>
+                    <select id="service-type" name="service-type" required>
+                        <option value="">Select a service</option>
+                        <option value="oil-change">Oil Change</option>
+                        <option value="tire-rotation">Tire Rotation</option>
+                        <option value="brake-service">Brake Service</option>
+                        <option value="general-inspection">General Inspection</option>
+                        <option value="repair">Repair</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="date">Preferred Date:</label>
+                    <input type="date" id="date" name="date" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="time">Preferred Time:</label>
+                    <select id="time" name="time" required>
+                        <option value="">Select a time</option>
+                        <option value="09:00">9:00 AM</option>
+                        <option value="10:00">10:00 AM</option>
+                        <option value="11:00">11:00 AM</option>
+                        <option value="13:00">1:00 PM</option>
+                        <option value="14:00">2:00 PM</option>
+                        <option value="15:00">3:00 PM</option>
+                        <option value="16:00">4:00 PM</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Issue Description:</label>
+                    <textarea id="description" name="description" rows="4" placeholder="Please describe the issue or service needed"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="car-image">Upload Car Image (optional):</label>
+                    <input type="file" id="car-image" name="car-image" accept="image/*">
+                </div>
+
+                <div class="form-group">
+                    <label for="notification-preference">
+                        <input type="checkbox" id="notification-preference" name="notification-preference" checked>
+                        Receive SMS notifications about appointment updates
+                    </label>
+                </div>
+
+                <button type="submit" class="submit-btn">Book Appointment</button>
+            </form>
+        </section>
+
+        <section id="appointments-list" style="display: none;">
+            <h2>Your Appointments</h2>
+            <div id="appointments-container"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2024 AutoCare Service Manager - Professional Car Care Services</p>
+    </footer>
+    <script src="app.js"></script>
+</body>
+</html>
