@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request, send_from_directory
 from aws.cognito_utils import create_user_pool, create_app_client, get_user_pool_id, get_client_id
 from aws.dynamodb_utils import create_appointments_table, put_appointment
-from aws.s3_utils import get_s3_client, create_bucket, upload_car_image
+from aws.s3_utils import get_s3_client, create_bucket, upload_car_image, configure_bucket_cors
 # from aws.sns_utils import send_notification
 from aws.lambda_utils import invoke_lambda_function
 import boto3
@@ -16,7 +16,7 @@ app = Flask(__name__, static_folder='frontend', static_url_path='')
 REGION = 'us-east-1'
 USER_POOL_ID = None
 CLIENT_ID = None
-BUCKET_NAME = 'autocare-images1'
+BUCKET_NAME = 'autocare-images1-' + str(uuid.uuid4())
 PORT = 5555
 # SNS_TOPIC_ARN = None
 APPOINTMENTS_TABLE = 'Appointments'
@@ -44,6 +44,11 @@ def init_aws_services():
         bucket = create_bucket(s3_client, BUCKET_NAME, REGION)
         if not bucket:
             print("Failed to create S3 bucket")
+            return False
+            
+        # Configure CORS for the bucket
+        if not configure_bucket_cors(s3_client, BUCKET_NAME):
+            print("Failed to configure CORS for S3 bucket")
             return False
         
         print(f"Successfully created/verified bucket: {BUCKET_NAME}")
@@ -221,16 +226,20 @@ def get_upload_url(user):
             Params={
                 'Bucket': BUCKET_NAME,
                 'Key': file_name,
-                'ContentType': data['fileType']
+                'ContentType': data['fileType'],
+                'ACL': 'public-read'
             },
             ExpiresIn=3600
         )
         
+        # Use the correct S3 URL format
         image_url = f"https://{BUCKET_NAME}.s3.{REGION}.amazonaws.com/{file_name}"
+        
         return jsonify({
             'uploadUrl': url,
             'imageUrl': image_url
         })
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 

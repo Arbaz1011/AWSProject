@@ -120,18 +120,27 @@ appointmentForm.addEventListener('submit', async (e) => {
     }
 
     const formData = new FormData(appointmentForm);
-    const appointmentData = {
-        carMake: formData.get('car-make'),
-        carModel: formData.get('car-model'),
-        carYear: formData.get('car-year'),
-        serviceType: formData.get('service-type'),
-        date: formData.get('date'),
-        time: formData.get('time'),
-        description: formData.get('description'),
-        notificationPreference: formData.get('notification-preference') === 'on'
-    };
-
+    
     try {
+        // Handle image upload first if a file was selected
+        let imageUrl = '';
+        const imageFile = formData.get('car-image');
+        if (imageFile && imageFile.size > 0) {
+            imageUrl = await uploadImage(imageFile);
+        }
+
+        const appointmentData = {
+            carMake: formData.get('car-make'),
+            carModel: formData.get('car-model'),
+            carYear: formData.get('car-year'),
+            serviceType: formData.get('service-type'),
+            date: formData.get('date'),
+            time: formData.get('time'),
+            description: formData.get('description'),
+            notificationPreference: formData.get('notification-preference') === 'on',
+            imageUrl: imageUrl  // Add the image URL to the appointment data
+        };
+
         const token = localStorage.getItem('token');
         if (!token) {
             throw new Error('Please login to book an appointment');
@@ -159,10 +168,14 @@ appointmentForm.addEventListener('submit', async (e) => {
     }
 });
 
-// Image Upload Handler
+// Update the Image Upload Handler
 async function uploadImage(file) {
     try {
         const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('Please login to upload images');
+        }
+
         // Get presigned URL
         const response = await fetch(`${API_ENDPOINT}/upload-url`, {
             method: 'POST',
@@ -170,26 +183,36 @@ async function uploadImage(file) {
                 'Content-Type': 'application/json',
                 'Authorization': token
             },
-            body: JSON.stringify({ fileName: file.name, fileType: file.type })
+            body: JSON.stringify({ 
+                fileName: file.name, 
+                fileType: file.type 
+            })
         });
 
-        if (!response.ok) throw new Error('Failed to get upload URL');
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to get upload URL');
+        }
         
         const { uploadUrl, imageUrl } = await response.json();
 
-        // Upload to S3
-        await fetch(uploadUrl, {
+        // Upload to S3 using the presigned URL
+        const uploadResponse = await fetch(uploadUrl, {
             method: 'PUT',
             body: file,
             headers: { 'Content-Type': file.type }
         });
 
+        if (!uploadResponse.ok) {
+            throw new Error('Failed to upload image');
+        }
+
         return imageUrl;
     } catch (error) {
-        throw new Error('Image upload failed');
+        console.error('Image upload error:', error);
+        throw new Error('Image upload failed: ' + error.message);
     }
 }
-
 
 // Load User Appointments
 async function loadUserAppointments() {
@@ -232,7 +255,7 @@ function displayAppointments(appointments) {
             <p><strong>Date:</strong> ${formatDate(appointment.date)}</p>
             <p><strong>Time:</strong> ${appointment.time}</p>
             <p><strong>Status:</strong> <span class="status-${appointment.status.toLowerCase()}">${appointment.status}</span></p>
-            ${appointment.imageUrl ? `<img src="${appointment.imageUrl}" alt="Car Image" style="max-width: 100%; margin-top: 1rem;">` : ''}
+            <p><strong>Description:</strong> ${appointment.description || 'No description provided'}</p>
         `;
         container.appendChild(card);
     });

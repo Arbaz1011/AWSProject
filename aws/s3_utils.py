@@ -2,6 +2,7 @@ import boto3
 from botocore.exceptions import ClientError
 import mimetypes
 import os
+import json
 
 def get_s3_client(region=None):
     """Initialize S3 client with optional region."""
@@ -28,7 +29,8 @@ def create_bucket(s3_client, bucket_name, region=None):
         if region is None or region == 'us-east-1':
             # For us-east-1, don't specify LocationConstraint
             response = s3_client.create_bucket(
-                Bucket=bucket_name
+                Bucket=bucket_name,
+                ObjectOwnership='ObjectWriter'
             )
         else:
             # For other regions, specify LocationConstraint
@@ -36,8 +38,66 @@ def create_bucket(s3_client, bucket_name, region=None):
                 Bucket=bucket_name,
                 CreateBucketConfiguration={
                     'LocationConstraint': region
-                }
+                },
+                ObjectOwnership='ObjectWriter'
             )
+            
+        # Wait for bucket to exist
+        waiter = s3_client.get_waiter('bucket_exists')
+        waiter.wait(Bucket=bucket_name)
+            
+        # Set bucket public access settings
+        s3_client.put_public_access_block(
+            Bucket=bucket_name,
+            PublicAccessBlockConfiguration={
+                'BlockPublicAcls': False,
+                'IgnorePublicAcls': False,
+                'BlockPublicPolicy': False,
+                'RestrictPublicBuckets': False
+            }
+        )
+        
+        # Configure bucket ownership controls
+        s3_client.put_bucket_ownership_controls(
+            Bucket=bucket_name,
+            OwnershipControls={
+                'Rules': [
+                    {
+                        'ObjectOwnership': 'BucketOwnerPreferred'
+                    }
+                ]
+            }
+        )
+        
+        # Add bucket policy to allow public read access
+        bucket_policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Sid": "PublicReadGetObject",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": [
+                        "s3:GetObject",
+                        "s3:PutObject"
+                    ],
+                    "Resource": [
+                        f"arn:aws:s3:::{bucket_name}",
+                        f"arn:aws:s3:::{bucket_name}/*"
+                    ]
+                }
+            ]
+        }
+        
+        # Convert the policy to JSON string
+        bucket_policy = json.dumps(bucket_policy)
+        
+        # Put the bucket policy
+        s3_client.put_bucket_policy(
+            Bucket=bucket_name,
+            Policy=bucket_policy
+        )
+        
         print(f"Successfully created bucket '{bucket_name}' in region '{region or 'us-east-1'}'")
         return bucket_name
     except ClientError as e:
@@ -54,8 +114,16 @@ def upload_car_image(s3_client, bucket_name, image_name, file_path):
         # Clean the file path
         clean_path = file_path.strip('"\'')
         
-        # Upload the file
-        s3_client.upload_file(clean_path, bucket_name, image_name)
+        # Upload the file with public-read ACL
+        s3_client.upload_file(
+            clean_path, 
+            bucket_name, 
+            image_name,
+            ExtraArgs={
+                'ACL': 'public-read',
+                'ContentType': mimetypes.guess_type(clean_path)[0] or 'application/octet-stream'
+            }
+        )
         
         # Generate and return the URL
         url = f"https://{bucket_name}.s3.amazonaws.com/{image_name}"
@@ -68,6 +136,28 @@ def upload_car_image(s3_client, bucket_name, image_name, file_path):
     except FileNotFoundError:
         print(f"Error: File not found at path: {clean_path}")
         return None
+
+def configure_bucket_cors(s3_client, bucket_name):
+    """Configure CORS for the S3 bucket."""
+    cors_configuration = {
+        'CORSRules': [{
+            'AllowedHeaders': ['*'],
+            'AllowedMethods': ['PUT', 'POST', 'GET'],
+            'AllowedOrigins': ['*'],
+            'ExposeHeaders': []
+        }]
+    }
+    
+    try:
+        s3_client.put_bucket_cors(
+            Bucket=bucket_name,
+            CORSConfiguration=cors_configuration
+        )
+        print(f"Successfully configured CORS for bucket {bucket_name}")
+        return True
+    except Exception as e:
+        print(f"Error configuring CORS: {str(e)}")
+        return False
 
 # Example usage
 if __name__ == "__main__":
