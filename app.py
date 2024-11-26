@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from aws.cognito_utils import create_user_pool, create_app_client, get_user_pool_id, get_client_id
 from aws.dynamodb_utils import create_appointments_table, put_appointment
 from aws.s3_utils import get_s3_client, create_bucket, upload_car_image, configure_bucket_cors
-# from aws.sns_utils import send_notification
+from aws.sns_utils import send_notification
 from aws.lambda_utils import invoke_lambda_function
 import boto3
 import uuid
@@ -18,11 +18,11 @@ USER_POOL_ID = None
 CLIENT_ID = None
 BUCKET_NAME = 'autocare-images1-' + str(uuid.uuid4())
 PORT = 5555
-# SNS_TOPIC_ARN = None
+SNS_TOPIC_ARN = None
 APPOINTMENTS_TABLE = 'Appointments'
 
 def init_aws_services():
-    global USER_POOL_ID, CLIENT_ID, APPOINTMENTS_TABLE
+    global USER_POOL_ID, CLIENT_ID, APPOINTMENTS_TABLE, SNS_TOPIC_ARN
     
     try:
         USER_POOL_ID = get_user_pool_id()
@@ -60,11 +60,18 @@ def init_aws_services():
             print(f"Error initializing DynamoDB: {str(e)}")
             return False
         
+        # Initialize SNS
+        sns_client = boto3.client('sns', region_name=REGION)
+        response = sns_client.create_topic(Name='appointment-notifications')
+        SNS_TOPIC_ARN = response['TopicArn']
+        
+        # Subscribe the user's email when they create an appointment
+        print(f"Successfully created SNS topic: {SNS_TOPIC_ARN}")
+        
+        return True
     except Exception as e:
         print(f"Error initializing AWS services: {str(e)}")
         return False
-
-    return True
 
 # Call initialization before the first request
 @app.before_request
@@ -337,19 +344,92 @@ def create_appointment(user):
             'description': data.get('description', ''),
             'imageUrl': data.get('imageUrl', ''),
             'status': 'Pending',
-            'createdAt': datetime.utcnow().isoformat()
+            'createdAt': datetime.utcnow().isoformat(),
+            'notificationPreference': data.get('notificationPreference', True),
         }
         
         put_appointment(appointment_id, appointment_data)
+        
+        # Subscribe user to SNS notifications if they opted in
+        if appointment_data['notificationPreference']:
+            try:
+                sns_client = boto3.client('sns', region_name=REGION)
+                sns_client.subscribe(
+                    TopicArn=SNS_TOPIC_ARN,
+                    Protocol='email',
+                    Endpoint=user['Username']
+                )
+                
+                # Send confirmation email
+                message = f"""
+                Thank you for booking an appointment with AutoCare Service Manager!
+                
+                Appointment Details:
+                Service: {data['serviceType']}
+                Date: {data['date']}
+                Time: {data['time']}
+                Vehicle: {data['carYear']} {data['carMake']} {data['carModel']}
+                
+                We will notify you of any updates to your appointment status.
+                """
+                
+                send_notification(
+                    SNS_TOPIC_ARN,
+                    message,
+                    'Appointment Confirmation'
+                )
+                
+            except Exception as e:
+                print(f"Error setting up SNS notification: {str(e)}")
+                # Continue even if notification setup fails
+                
         return jsonify(appointment_data), 201
         
     except Exception as e:
-        print(f"Error creating appointment: {str(e)}")  # Add debug logging
+        print(f"Error creating appointment: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/<path:path>')
 def serve_static_files(path):
     return send_from_directory(app.static_folder, path)
+
+# Example of sending notification when appointment status changes
+def update_appointment_status(appointment_id, new_status):
+    try:
+        dynamodb = boto3.resource('dynamodb', region_name=REGION)
+        table = dynamodb.Table('Appointments')
+        
+        # Update the appointment status
+        response = table.update_item(
+            Key={'appointment_id': appointment_id},
+            UpdateExpression='SET #status = :status',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={':status': new_status},
+            ReturnValues='ALL_NEW'
+        )
+        
+        # Send notification about status change
+        appointment = response['Attributes']
+        if appointment.get('notificationPreference'):
+            message = f"""
+            Your appointment status has been updated.
+            
+            New Status: {new_status}
+            Service: {appointment['serviceType']}
+            Date: {appointment['date']}
+            Time: {appointment['time']}
+            """
+            
+            send_notification(
+                SNS_TOPIC_ARN,
+                message,
+                f'Appointment Status Update: {new_status}'
+            )
+            
+        return response['Attributes']
+    except Exception as e:
+        print(f"Error updating appointment status: {str(e)}")
+        raise e
 
 if __name__ == '__main__':
     app.run(debug=True, port=PORT)
